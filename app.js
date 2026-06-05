@@ -7,7 +7,7 @@ const SETTINGS = {
   reminderDaysBefore: 3,
   refreshMinutes: 30,
   maxRotationStartMonth: 5,
-  maxRotation: ['sarha', 'andre', 'isabela', 'ianka'],
+  maxRotation: ['sarha_pedrosa', 'andre_luiz', 'bela_lustosa', 'ianka_lacerda'],
 };
 
 // Estado global da aplicação
@@ -23,121 +23,9 @@ let refreshIntervalId = null;
 let reminderCheckInProgress = false;
 let serviceWorkerRegistrationPromise = null;
 
-let PEOPLE = {
-  andre: {
-    name: 'André Luiz',
-    aliases: ['andre', 'andré'],
-    subscriptions: [
-      'disney',
-      'max',
-      'spotify',
-      'crunchyroll',
-      'prime_video',
-      'google_one',
-      'f1_tv_pro',
-      'globoplay',
-    ],
-    color: '#4f46e5',
-    avatar: 'AL',
-    isAdmin: true,
-  },
-  isabela: {
-    name: 'Bela Lustosa',
-    aliases: ['isabela'],
-    subscriptions: ['disney', 'max', 'spotify'],
-    color: '#ec4899',
-    avatar: 'BL',
-  },
-  ianka: {
-    name: 'Ianka Lacerda',
-    aliases: ['ianka'],
-    subscriptions: ['disney', 'max'],
-    color: '#10b981',
-    avatar: 'IL',
-  },
-  sarha: {
-    name: 'Sarha Pedrosa',
-    aliases: ['sarha'],
-    subscriptions: ['max'],
-    color: '#f59e0b',
-    avatar: 'SP',
-  },
-};
+let PEOPLE = {};
 
-let SERVICES = {
-  disney: {
-    name: 'Disney+',
-    shortName: 'D+',
-    cssClass: 'service-disney',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 66.93,
-    participants: ['andre', 'isabela', 'ianka'],
-  },
-  max: {
-    name: 'HBO Max',
-    shortName: 'M',
-    cssClass: 'service-max',
-    model: 'rotation',
-    modelLabel: 'Rodízio',
-    totalAmount: 22.45,
-    participants: ['andre', 'isabela', 'ianka', 'sarha'],
-  },
-  spotify: {
-    name: 'Spotify',
-    shortName: 'S',
-    cssClass: 'service-spotify',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 31.9,
-    participants: ['andre', 'isabela'],
-  },
-  crunchyroll: {
-    name: 'Crunchyroll',
-    shortName: 'CR',
-    cssClass: 'service-crunchyroll',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 19.9,
-    participants: ['andre'],
-  },
-  prime_video: {
-    name: 'Prime Video',
-    shortName: 'PV',
-    cssClass: 'service-prime',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 9.95,
-    participants: ['andre'],
-  },
-  google_one: {
-    name: 'Google One',
-    shortName: 'G1',
-    cssClass: 'service-google',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 10.0,
-    participants: ['andre'],
-  },
-  f1_tv_pro: {
-    name: 'F1 TV Pro',
-    shortName: 'F1',
-    cssClass: 'service-f1',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 29.0,
-    participants: ['andre'],
-  },
-  globoplay: {
-    name: 'Globoplay',
-    shortName: 'GP',
-    cssClass: 'service-globoplay',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 20.0,
-    participants: ['andre'],
-  },
-};
+let SERVICES = {};
 
 function applyDynamicAmounts() {
   for (const sKey in SERVICES) {
@@ -172,94 +60,6 @@ function syncRelationships() {
       }
     }
   }
-}
-
-function loadAdminSettings() {
-  let settingsStr = localStorage.getItem('site_settings');
-
-  // Tentar encontrar configurações globais nos logs (pode estar em 'admin' ou personKey atual)
-  const settingsProviders = ['admin', state?.currentPersonKey].filter(Boolean);
-
-  for (const provider of settingsProviders) {
-    const providerLogs = paidLogsCache && paidLogsCache[provider];
-    if (!providerLogs) continue;
-
-    // 1) Single entry (legacy)
-    const singleKeys = Object.keys(providerLogs)
-      .filter((k) => k.includes(':site_settings|'))
-      .sort()
-      .reverse();
-    if (singleKeys.length > 0) {
-      const parts = singleKeys[0].split('|');
-      if (parts.length >= 3) {
-        settingsStr = parts.slice(2).join('|');
-        localStorage.setItem('site_settings', settingsStr);
-        break; // Mais recente disponível
-      }
-    }
-
-    // 2) Multi-part chunked upload support (site_settings_chunk)
-    const chunkKeys = Object.keys(providerLogs).filter(
-      (k) =>
-        k.includes(':site_settings_chunk|') ||
-        k.includes(':site_settings_part|'),
-    );
-
-    if (chunkKeys.length > 0) {
-      const groups = {};
-      chunkKeys.forEach((k) => {
-        const colonIndex = k.indexOf(':');
-        if (colonIndex === -1) return;
-        const payload = k.slice(colonIndex + 1); // site_settings_chunk|gid|idx|total|b64
-        const parts = payload.split('|');
-        if (parts.length < 5) return;
-        const tag = parts[0];
-        if (!tag.startsWith('site_settings')) return;
-        const gid = parts[1];
-        const partIndex = parseInt(parts[2], 10);
-        const total = parseInt(parts[3], 10) || 0;
-        const b64 = parts.slice(4).join('|');
-
-        groups[gid] = groups[gid] || { total: total, parts: {} };
-        if (!isNaN(partIndex)) groups[gid].parts[partIndex] = b64;
-      });
-
-      const sortedGids = Object.keys(groups).sort().reverse();
-      for (const gid of sortedGids) {
-        const g = groups[gid];
-        if (!g || !g.total) continue;
-        const haveAll = Object.keys(g.parts).length === g.total;
-        if (!haveAll) continue;
-        try {
-          const encoded = Array.from(
-            { length: g.total },
-            (_, i) => g.parts[i] || '',
-          ).join('');
-          const json = fromBase64Unicode(encoded);
-          settingsStr = json;
-          localStorage.setItem('site_settings', settingsStr);
-          break;
-        } catch (e) {
-          // ignore and try earlier groups
-        }
-      }
-
-      if (settingsStr) break;
-    }
-  }
-
-  if (settingsStr) {
-    try {
-      const parsed = JSON.parse(settingsStr);
-      if (parsed.PEOPLE) PEOPLE = parsed.PEOPLE;
-      if (parsed.SERVICES) SERVICES = parsed.SERVICES;
-    } catch (e) {
-      console.warn('Erro ao ler configs do localStorage', e);
-    }
-  }
-
-  syncRelationships();
-  applyDynamicAmounts();
 }
 
 const STORAGE_KEYS = {
@@ -422,7 +222,8 @@ const PAYMENT_ACTION_ICONS = {
   unmark: 'icones/icons8-undo-pay-100.png',
 };
 
-loadAdminSettings();
+syncRelationships();
+applyDynamicAmounts();
 // Removidos os inícios antigos, agora usamos o initApp()
 bindEvents();
 checkInitialNotificationPermission();
@@ -2644,7 +2445,8 @@ function updateUIAfterSync({
   previousStructureSnapshot = null,
   previousPaidLogs = null,
 } = {}) {
-  loadAdminSettings();
+  syncRelationships();
+  applyDynamicAmounts();
 
   if (state.currentPersonKey) {
     const structureChanged =
@@ -4134,10 +3936,33 @@ async function carregarDadosDoGrupo(idGrupo) {
   if (adminProfilesList) adminProfilesList.innerHTML = '';
   if (adminServicesList) adminServicesList.innerHTML = '';
 
+  const profilePanel = document.querySelector('#profileScreen .profile-panel');
+  if (profilePanel) profilePanel.classList.add('is-loading');
+
   if (profileGrid) {
-    profileGrid.innerHTML =
-      '<div style="grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 0; width: 100%;"><div class="loader-spinner"></div><p style="color: var(--muted); font-size: 0.9rem; margin: 0;">Carregando perfis...</p></div>';
+    profileGrid.innerHTML = `
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+    `;
   }
+
+  const submitButton = profileForm?.querySelector('button[type="submit"]');
+  if (profileNameInput) profileNameInput.disabled = true;
+  if (submitButton) submitButton.disabled = true;
 
   try {
     const url = `${API_URL}?action=carregar_dados&id_grupo=${idGrupo}`;
@@ -4154,6 +3979,12 @@ async function carregarDadosDoGrupo(idGrupo) {
   } catch (e) {
     profileMessage.style.color = 'var(--danger)';
     profileMessage.textContent = 'Erro ao sincronizar. Verifique a internet.';
+  } finally {
+    const profilePanel = document.querySelector('#profileScreen .profile-panel');
+    if (profilePanel) profilePanel.classList.remove('is-loading');
+    const submitButton = profileForm?.querySelector('button[type="submit"]');
+    if (profileNameInput) profileNameInput.disabled = false;
+    if (submitButton) submitButton.disabled = false;
   }
 }
 
