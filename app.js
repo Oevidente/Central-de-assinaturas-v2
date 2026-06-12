@@ -7,7 +7,7 @@ const SETTINGS = {
   reminderDaysBefore: 3,
   refreshMinutes: 30,
   maxRotationStartMonth: 5,
-  maxRotation: ['sarha', 'andre', 'isabela', 'ianka'],
+  maxRotation: ['sarha_pedrosa', 'andre_luiz', 'bela_lustosa', 'ianka_lacerda'],
 };
 
 // Estado global da aplicação
@@ -17,127 +17,16 @@ const state = {
   selectedYear: new Date().getFullYear(),
   groupId: localStorage.getItem('streaming-payments-group-id') || null,
   groupName: localStorage.getItem('streaming-payments-group-name') || null,
+  viewMode: localStorage.getItem('streaming-payments-view-mode') || 'standard',
 };
 
 let refreshIntervalId = null;
 let reminderCheckInProgress = false;
 let serviceWorkerRegistrationPromise = null;
 
-let PEOPLE = {
-  andre: {
-    name: 'André Luiz',
-    aliases: ['andre', 'andré'],
-    subscriptions: [
-      'disney',
-      'max',
-      'spotify',
-      'crunchyroll',
-      'prime_video',
-      'google_one',
-      'f1_tv_pro',
-      'globoplay',
-    ],
-    color: '#4f46e5',
-    avatar: 'AL',
-    isAdmin: true,
-  },
-  isabela: {
-    name: 'Bela Lustosa',
-    aliases: ['isabela'],
-    subscriptions: ['disney', 'max', 'spotify'],
-    color: '#ec4899',
-    avatar: 'BL',
-  },
-  ianka: {
-    name: 'Ianka Lacerda',
-    aliases: ['ianka'],
-    subscriptions: ['disney', 'max'],
-    color: '#10b981',
-    avatar: 'IL',
-  },
-  sarha: {
-    name: 'Sarha Pedrosa',
-    aliases: ['sarha'],
-    subscriptions: ['max'],
-    color: '#f59e0b',
-    avatar: 'SP',
-  },
-};
+let PEOPLE = {};
 
-let SERVICES = {
-  disney: {
-    name: 'Disney+',
-    shortName: 'D+',
-    cssClass: 'service-disney',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 66.93,
-    participants: ['andre', 'isabela', 'ianka'],
-  },
-  max: {
-    name: 'HBO Max',
-    shortName: 'M',
-    cssClass: 'service-max',
-    model: 'rotation',
-    modelLabel: 'Rodízio',
-    totalAmount: 22.45,
-    participants: ['andre', 'isabela', 'ianka', 'sarha'],
-  },
-  spotify: {
-    name: 'Spotify',
-    shortName: 'S',
-    cssClass: 'service-spotify',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 31.9,
-    participants: ['andre', 'isabela'],
-  },
-  crunchyroll: {
-    name: 'Crunchyroll',
-    shortName: 'CR',
-    cssClass: 'service-crunchyroll',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 19.9,
-    participants: ['andre'],
-  },
-  prime_video: {
-    name: 'Prime Video',
-    shortName: 'PV',
-    cssClass: 'service-prime',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 9.95,
-    participants: ['andre'],
-  },
-  google_one: {
-    name: 'Google One',
-    shortName: 'G1',
-    cssClass: 'service-google',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 10.0,
-    participants: ['andre'],
-  },
-  f1_tv_pro: {
-    name: 'F1 TV Pro',
-    shortName: 'F1',
-    cssClass: 'service-f1',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 29.0,
-    participants: ['andre'],
-  },
-  globoplay: {
-    name: 'Globoplay',
-    shortName: 'GP',
-    cssClass: 'service-globoplay',
-    model: 'monthly',
-    modelLabel: 'Todo mês',
-    totalAmount: 20.0,
-    participants: ['andre'],
-  },
-};
+let SERVICES = {};
 
 function applyDynamicAmounts() {
   for (const sKey in SERVICES) {
@@ -172,94 +61,6 @@ function syncRelationships() {
       }
     }
   }
-}
-
-function loadAdminSettings() {
-  let settingsStr = localStorage.getItem('site_settings');
-
-  // Tentar encontrar configurações globais nos logs (pode estar em 'admin' ou personKey atual)
-  const settingsProviders = ['admin', state?.currentPersonKey].filter(Boolean);
-
-  for (const provider of settingsProviders) {
-    const providerLogs = paidLogsCache && paidLogsCache[provider];
-    if (!providerLogs) continue;
-
-    // 1) Single entry (legacy)
-    const singleKeys = Object.keys(providerLogs)
-      .filter((k) => k.includes(':site_settings|'))
-      .sort()
-      .reverse();
-    if (singleKeys.length > 0) {
-      const parts = singleKeys[0].split('|');
-      if (parts.length >= 3) {
-        settingsStr = parts.slice(2).join('|');
-        localStorage.setItem('site_settings', settingsStr);
-        break; // Mais recente disponível
-      }
-    }
-
-    // 2) Multi-part chunked upload support (site_settings_chunk)
-    const chunkKeys = Object.keys(providerLogs).filter(
-      (k) =>
-        k.includes(':site_settings_chunk|') ||
-        k.includes(':site_settings_part|'),
-    );
-
-    if (chunkKeys.length > 0) {
-      const groups = {};
-      chunkKeys.forEach((k) => {
-        const colonIndex = k.indexOf(':');
-        if (colonIndex === -1) return;
-        const payload = k.slice(colonIndex + 1); // site_settings_chunk|gid|idx|total|b64
-        const parts = payload.split('|');
-        if (parts.length < 5) return;
-        const tag = parts[0];
-        if (!tag.startsWith('site_settings')) return;
-        const gid = parts[1];
-        const partIndex = parseInt(parts[2], 10);
-        const total = parseInt(parts[3], 10) || 0;
-        const b64 = parts.slice(4).join('|');
-
-        groups[gid] = groups[gid] || { total: total, parts: {} };
-        if (!isNaN(partIndex)) groups[gid].parts[partIndex] = b64;
-      });
-
-      const sortedGids = Object.keys(groups).sort().reverse();
-      for (const gid of sortedGids) {
-        const g = groups[gid];
-        if (!g || !g.total) continue;
-        const haveAll = Object.keys(g.parts).length === g.total;
-        if (!haveAll) continue;
-        try {
-          const encoded = Array.from(
-            { length: g.total },
-            (_, i) => g.parts[i] || '',
-          ).join('');
-          const json = fromBase64Unicode(encoded);
-          settingsStr = json;
-          localStorage.setItem('site_settings', settingsStr);
-          break;
-        } catch (e) {
-          // ignore and try earlier groups
-        }
-      }
-
-      if (settingsStr) break;
-    }
-  }
-
-  if (settingsStr) {
-    try {
-      const parsed = JSON.parse(settingsStr);
-      if (parsed.PEOPLE) PEOPLE = parsed.PEOPLE;
-      if (parsed.SERVICES) SERVICES = parsed.SERVICES;
-    } catch (e) {
-      console.warn('Erro ao ler configs do localStorage', e);
-    }
-  }
-
-  syncRelationships();
-  applyDynamicAmounts();
 }
 
 const STORAGE_KEYS = {
@@ -422,7 +223,8 @@ const PAYMENT_ACTION_ICONS = {
   unmark: 'icones/icons8-undo-pay-100.png',
 };
 
-loadAdminSettings();
+syncRelationships();
+applyDynamicAmounts();
 // Removidos os inícios antigos, agora usamos o initApp()
 bindEvents();
 checkInitialNotificationPermission();
@@ -522,6 +324,7 @@ function bindEvents() {
   upcomingPanel.addEventListener('click', async (event) => {
     const testButton = event.target.closest('[data-test-notification]');
     const calendarButton = event.target.closest('[data-add-calendar]');
+    const cancelToggleButton = event.target.closest('[data-toggle-cancelled]');
     const markButton = event.target.closest('[data-mark-paid]');
 
     if (testButton) {
@@ -530,6 +333,27 @@ function bindEvents() {
 
     if (calendarButton) {
       openGoogleCalendarEvent();
+    }
+
+    if (cancelToggleButton) {
+      if (!state.currentPersonKey || !state.selectedServiceKey) return;
+      const isCancelled = getSubscriptionCancellationMonth(state.currentPersonKey, state.selectedServiceKey) !== null;
+      cancelToggleButton.disabled = true;
+      try {
+        if (isCancelled) {
+          await uncancelSubscription(state.currentPersonKey, state.selectedServiceKey);
+        } else {
+          await cancelSubscription(state.currentPersonKey, state.selectedServiceKey);
+        }
+        updateMonthlyTotal(state.currentPersonKey);
+        renderSubscriptionCards(state.currentPersonKey);
+        renderDetails({ animatePayments: false });
+      } catch (err) {
+        console.error('Erro ao alternar status de cancelamento:', err);
+      } finally {
+        cancelToggleButton.disabled = false;
+      }
+      return;
     }
     if (markButton) {
       if (!state.currentPersonKey) {
@@ -707,6 +531,69 @@ function bindEvents() {
 
   adminModalSaveButton.addEventListener('click', handleAdminSave);
   adminModalDeleteButton.addEventListener('click', handleAdminDelete);
+
+  // Inicializa o gerenciador de modos de exibição de cartões (Padrão, Grade, Resumo)
+  initViewSwitcher();
+}
+
+function updateViewSwitcherUI() {
+  const list = document.querySelector('#subscriptionList');
+  if (!list) return;
+
+  // Atualiza classes CSS para controlar estilos de layouts
+  list.classList.remove('view-standard', 'view-grid', 'view-summary');
+  list.classList.add(`view-${state.viewMode}`);
+
+  // Sincroniza botões e indicador deslizante do Segmented Control estilo iOS
+  const buttons = document.querySelectorAll('.segmented-control-button');
+  const indicator = document.querySelector('#viewModeIndicator');
+
+  buttons.forEach((btn) => {
+    const isCurrent = btn.dataset.view === state.viewMode;
+    btn.classList.toggle('is-active', isCurrent);
+    btn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+
+    if (isCurrent && indicator) {
+      // Pequeno timeout para garantir renderização correta das larguras
+      setTimeout(() => {
+        indicator.style.width = `${btn.offsetWidth}px`;
+        indicator.style.transform = `translateX(${btn.offsetLeft}px)`;
+      }, 50);
+    }
+  });
+}
+
+function initViewSwitcher() {
+  const buttons = document.querySelectorAll('.segmented-control-button');
+  
+  // Setup inicial da UI com o valor salvo
+  updateViewSwitcherUI();
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const selectedView = btn.dataset.view;
+      if (state.viewMode === selectedView) return;
+
+      state.viewMode = selectedView;
+      localStorage.setItem('streaming-payments-view-mode', selectedView);
+
+      updateViewSwitcherUI();
+
+      if (state.currentPersonKey) {
+        renderSubscriptionCards(state.currentPersonKey);
+      }
+    });
+  });
+
+  // Evento resize para manter o alinhamento perfeito do indicador deslizante
+  window.addEventListener('resize', () => {
+    const activeBtn = document.querySelector(`.segmented-control-button[data-view="${state.viewMode}"]`);
+    const indicator = document.querySelector('#viewModeIndicator');
+    if (activeBtn && indicator) {
+      indicator.style.width = `${activeBtn.offsetWidth}px`;
+      indicator.style.transform = `translateX(${activeBtn.offsetLeft}px)`;
+    }
+  });
 }
 
 async function handleProfileSubmit() {
@@ -827,9 +714,10 @@ async function openDashboard(personKey) {
   state.selectedYear = getToday().getFullYear();
 
   personName.textContent = person.name;
-  summaryCount.textContent = person.subscriptions.length;
+  const activeSubsCount = getSortedServiceKeysForPerson(personKey).length;
+  summaryCount.textContent = activeSubsCount;
   summaryLabel.textContent =
-    person.subscriptions.length === 1 ? 'assinatura' : 'assinaturas';
+    activeSubsCount === 1 ? 'assinatura' : 'assinaturas';
   profileScreen.classList.add('is-hidden');
   dashboard.classList.remove('is-hidden');
   changeProfileButton.classList.remove('is-hidden');
@@ -888,23 +776,27 @@ async function openDashboard(personKey) {
   startSessionLoops();
 }
 
-function getSortedServiceKeysForPerson(personKey) {
+function getSortedServiceKeysForPerson(personKey, checkDate = getToday()) {
   const person = PEOPLE[personKey];
   if (!person) return [];
+
+  const activeSubscriptions = person.subscriptions.filter(
+    (sKey) => !isSubscriptionCancelled(personKey, sKey, checkDate)
+  );
 
   const savedOrder = getSavedSubscriptionOrder(personKey);
 
   if (savedOrder && savedOrder.length > 0) {
     const sortedServices = savedOrder.filter(
-      (s) => person.subscriptions.includes(s) && SERVICES[s],
+      (s) => activeSubscriptions.includes(s) && SERVICES[s],
     );
-    const missing = person.subscriptions.filter(
+    const missing = activeSubscriptions.filter(
       (s) => !sortedServices.includes(s) && SERVICES[s],
     );
     return [...sortedServices, ...missing];
   }
 
-  return [...person.subscriptions]
+  return [...activeSubscriptions]
     .filter((s) => SERVICES[s])
     .sort((a, b) => SERVICES[a].name.localeCompare(SERVICES[b].name, 'pt-BR'));
 }
@@ -919,7 +811,50 @@ function bindSubscriptionCard(card) {
   if (!card || card.dataset.cardBound === 'true') return;
 
   card.dataset.cardBound = 'true';
-  card.addEventListener('click', () => {
+  card.addEventListener('click', async (event) => {
+    const payBtn = event.target.closest('[data-card-toggle-paid]');
+    if (payBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!state.currentPersonKey) {
+        setNotificationStatus('Selecione um perfil antes de marcar pagamentos.');
+        return;
+      }
+
+      const serviceKey = card.dataset.service;
+      const nextPayment = getNextPayment(serviceKey, state.currentPersonKey);
+      if (!nextPayment) {
+        setNotificationStatus('Nenhuma cobrança ativa restante.');
+        return;
+      }
+
+      const payment = {
+        serviceKey,
+        date: nextPayment.date,
+        amount: SERVICES[serviceKey]?.amount ?? 0,
+      };
+
+      const paid = isPaymentPaid(state.currentPersonKey, payment);
+
+      payBtn.classList.add('pulse-success');
+      setTimeout(() => payBtn.classList.remove('pulse-success'), 600);
+
+      try {
+        if (paid) {
+          await unmarkPayment(state.currentPersonKey, payment);
+          setNotificationStatus('Parcela desmarcada como paga.');
+        } else {
+          await markPaymentAsPaid(state.currentPersonKey, payment);
+          setNotificationStatus('Parcela marcada como paga.');
+        }
+      } catch (err) {
+        console.error('Erro ao alterar pagamento através do card:', err);
+        setNotificationStatus('Falha ao registrar pagamento.');
+      }
+      return;
+    }
+
     void openServiceDetails(card.dataset.service);
   });
 }
@@ -948,7 +883,101 @@ function renderSubscriptionCards(personKey) {
     subscriptionList.insertAdjacentElement('afterend', detailsPanel);
   }
 
-  subscriptionList.innerHTML = sortedServices
+  // Sincroniza classes e estado do switcher de visualização
+  updateViewSwitcherUI();
+
+  let dashboardHtml = '';
+
+  if (state.viewMode === 'summary') {
+    const person = PEOPLE[personKey];
+    let totalAssinaturasCalculadas = 0;
+    let totalGeralMensal = 0;
+    let totalPendenteNaData = 0;
+    let assinaturasPagasNoMes = 0;
+    let possuiAtrasos = false;
+    let qtdAtrasadas = 0;
+
+    const today = startOfDay(getToday());
+    let activeMonth = today.getMonth();
+    let activeYear = today.getFullYear();
+
+    if (today.getDate() > SETTINGS.dueDay) {
+      activeMonth += 1;
+      if (activeMonth > 11) {
+        activeMonth = 0;
+        activeYear += 1;
+      }
+    }
+
+    const activeCutoffDate = createPaymentDate(activeYear, activeMonth);
+
+    if (person) {
+      getSortedServiceKeysForPerson(personKey).forEach((serviceKey) => {
+        const service = SERVICES[serviceKey];
+        if (!service) return;
+
+        totalGeralMensal += service.amount;
+        totalAssinaturasCalculadas += 1;
+
+        const nextPayment = getNextPayment(serviceKey, personKey);
+        if (nextPayment) {
+          const paid = isPaymentPaid(personKey, nextPayment);
+
+          if (paid) {
+            assinaturasPagasNoMes += 1;
+          } else {
+            if (nextPayment.date < today) {
+              possuiAtrasos = true;
+              qtdAtrasadas += 1;
+            }
+            if (nextPayment.date <= activeCutoffDate) {
+              totalPendenteNaData += nextPayment.amount;
+            }
+          }
+        }
+      });
+    }
+
+    const progressPercent = totalAssinaturasCalculadas > 0 ? (assinaturasPagasNoMes / totalAssinaturasCalculadas) * 100 : 0;
+
+    dashboardHtml = `
+      <div class="oinc-dashboard animate-slide-up">
+        <!-- Card Principal de Saúde Financeira -->
+        <div class="oinc-main-card">
+          <div class="oinc-progress-info">
+            <div class="oinc-progress-title">
+              <h3>Progresso Mensal</h3>
+              <p>Ciclo com vencimento até ${formatShortDate(activeCutoffDate)}</p>
+            </div>
+            <div class="oinc-progress-ratio">
+              <strong>${assinaturasPagasNoMes}</strong><span>/${totalAssinaturasCalculadas} pagos</span>
+            </div>
+          </div>
+          <div class="oinc-progress-track">
+            <div class="oinc-progress-bar" style="width: ${progressPercent}%"></div>
+          </div>
+        </div>
+
+        <!-- Cards Secundários Lado a Lado -->
+        <div class="oinc-widgets-grid">
+          <div class="oinc-widget is-money">
+            <span class="oinc-widget-label">A vencer (Ciclo)</span>
+            <strong class="oinc-widget-value text-accent">${moneyFormatter.format(totalPendenteNaData)}</strong>
+            <span class="oinc-widget-sub">Mensalidade Total: ${moneyFormatter.format(totalGeralMensal)}</span>
+          </div>
+
+          <!-- Status de Saúde -->
+          <div class="oinc-widget is-health ${possuiAtrasos ? 'is-danger' : (assinaturasPagasNoMes === totalAssinaturasCalculadas && totalAssinaturasCalculadas > 0 ? 'is-complete' : 'is-ok')}">
+            <span class="oinc-widget-label">Status Global</span>
+            <strong class="oinc-widget-value">${possuiAtrasos ? `${qtdAtrasadas} Atrasada${qtdAtrasadas > 1 ? 's' : ''}` : (assinaturasPagasNoMes === totalAssinaturasCalculadas && totalAssinaturasCalculadas > 0 ? 'Tudo Pago 🎉' : 'Em Dia 👌')}</strong>
+            <span class="oinc-widget-sub">${possuiAtrasos ? 'Pendências detectadas' : (assinaturasPagasNoMes === totalAssinaturasCalculadas && totalAssinaturasCalculadas > 0 ? 'Contas zeradas!' : 'Sem atrasos ativos')}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  subscriptionList.innerHTML = dashboardHtml + sortedServices
     .map((serviceKey) => createSubscriptionCard(serviceKey, personKey))
     .join('');
 
@@ -1081,7 +1110,7 @@ function updateMonthlyTotal(personKey) {
 
   let total = 0;
 
-  person.subscriptions.forEach((serviceKey) => {
+  getSortedServiceKeysForPerson(personKey).forEach((serviceKey) => {
     // Puxa uma lista de até 12 parcelas (vencidas e futuras)
     const payments = getUpcomingPaymentsForPerson(serviceKey, personKey, 12);
 
@@ -1129,8 +1158,92 @@ function createSubscriptionCard(serviceKey, personKey) {
 
   const symbolHtml = `<span class="service-symbol">${service.shortName}</span>`;
 
+  if (state.viewMode === 'grid') {
+    const payBtnHtml = nextPayment ? `
+      <button class="card-direct-pay-btn is-compact ${paid ? 'is-paid' : ''}" type="button" data-card-toggle-paid title="${paid ? 'Desmarcar pagamento' : 'Marcar como pago'}">
+        <img src="${paid ? 'icones/icons8-undo-pay-100.png' : 'icones/icons8-pay-100.png'}" alt="" />
+      </button>
+    ` : '';
+
+    return `
+      <div class="subscription-card is-compact-grid ${service.cssClass}${paid ? ' is-paid' : ''}" role="button" tabindex="0" data-service="${serviceKey}" data-person="${personKey}" ${overrideStyle}>
+        <div class="compact-grid-header">
+          <div class="compact-grid-brand">
+            ${symbolHtml}
+            <strong class="compact-grid-title">${service.name}</strong>
+          </div>
+          ${payBtnHtml}
+        </div>
+        
+        <div class="compact-grid-info">
+          <div class="compact-grid-meta">
+            <span class="compact-grid-label">${paid ? 'Pago' : 'Data'}</span>
+            <strong class="compact-grid-val">${dateText}</strong>
+          </div>
+          <div class="compact-grid-meta" style="text-align: right;">
+            <span class="compact-grid-label">Valor</span>
+            <strong class="compact-grid-val">${amountText}</strong>
+          </div>
+        </div>
+        
+        <div class="compact-grid-footer">
+          <span class="share-type is-mini">${service.modelLabel}</span>
+          <div class="subscription-participants is-mini">
+            ${participantsHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.viewMode === 'summary') {
+    const payBtnHtml = nextPayment ? `
+      <button class="card-direct-pay-btn is-summary ${paid ? 'is-paid' : ''}" type="button" data-card-toggle-paid title="${paid ? 'Desmarcar pagamento' : 'Marcar como pago'}">
+        <img src="${paid ? 'icones/icons8-undo-pay-100.png' : 'icones/icons8-pay-100.png'}" alt="" />
+        <span>${paid ? 'Estornar' : 'Pagar'}</span>
+      </button>
+    ` : '';
+
+    return `
+      <div class="subscription-card is-summary-row ${paid ? ' is-paid' : ''}" role="button" tabindex="0" data-service="${serviceKey}" data-person="${personKey}" style="--brand-color: ${service.color || 'var(--accent)'};">
+        <div class="summary-left">
+          ${symbolHtml}
+          <div class="summary-service-info">
+            <strong class="summary-title">${service.name}</strong>
+            <span class="share-type is-mini">${service.modelLabel}</span>
+          </div>
+        </div>
+        
+        <div class="summary-middle">
+          <div class="summary-meta">
+            <span class="summary-label">${paid ? 'Pago em' : 'Vence em'}</span>
+            <strong class="summary-val">${dateText}</strong>
+          </div>
+          <div class="subscription-participants is-mini">
+            ${participantsHtml}
+          </div>
+        </div>
+        
+        <div class="summary-right">
+          <div class="summary-meta" style="margin-right: 12px; align-items: flex-end;">
+            <span class="summary-label">Valor</span>
+            <strong class="summary-val text-accent">${amountText}</strong>
+          </div>
+          ${payBtnHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  // Standard Comportamento
+  const payBtnHtml = nextPayment ? `
+    <button class="card-direct-pay-btn ${paid ? 'is-paid' : ''}" type="button" data-card-toggle-paid title="${paid ? 'Desmarcar pagamento' : 'Marcar como pago'}">
+      <img src="${paid ? 'icones/icons8-undo-pay-100.png' : 'icones/icons8-pay-100.png'}" alt="" />
+    </button>
+  ` : '';
+
   return `
-    <button class="subscription-card ${service.cssClass}${paid ? ' is-paid' : ''}" type="button" data-service="${serviceKey}" data-person="${personKey}" ${overrideStyle}>
+    <div class="subscription-card ${service.cssClass}${paid ? ' is-paid' : ''}" role="button" tabindex="0" data-service="${serviceKey}" data-person="${personKey}" ${overrideStyle}>
       <span class="subscription-top">
         <span class="subscription-title-container">
           <span class="subscription-title">
@@ -1141,7 +1254,10 @@ function createSubscriptionCard(serviceKey, personKey) {
             ${participantsHtml}
           </span>
         </span>
-        <span class="share-type">${service.modelLabel}</span>
+        <span style="display: flex; align-items: center; gap: 8px;">
+          <span class="share-type">${service.modelLabel}</span>
+          ${payBtnHtml}
+        </span>
       </span>
 
       <span class="payment-line">
@@ -1154,7 +1270,7 @@ function createSubscriptionCard(serviceKey, personKey) {
           <strong data-card-amount>${amountText}</strong>
         </span>
       </span>
-    </button>
+    </div>
   `;
 }
 
@@ -1253,7 +1369,24 @@ function renderUpcomingPayments(
     `;
   }
 
+  const cancelMonth = getSubscriptionCancellationMonth(personKey, serviceKey);
+  const isCancelled = cancelMonth !== null;
+  const cancelBanner = isCancelled
+    ? `<div class="cancelled-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 4px; align-items: start; margin-top: 10px;">
+         <strong style="color: #fca5a5; font-size: 0.95rem;">Assinatura Cancelada 🚫</strong>
+         <span style="color: rgba(255, 255, 255, 0.82); font-size: 0.85rem; line-height: 1.4;">Ela continuará aparecendo no mês atual, mas não fará mais parte do seu escopo de assinaturas a partir de <strong>${formatMonthYearKeyLabel(cancelMonth)}</strong>.</span>
+       </div>`
+    : '';
+
+  const toggleCancelButtonHtml = `
+    <button class="ghost-button" type="button" data-toggle-cancelled style="color: ${isCancelled ? '#10b981' : '#f43f5e'}; border-color: ${isCancelled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}; margin-left: auto;">
+      <img src="${isCancelled ? 'icones/icons8-sync-100.png' : 'icones/icons8-no-reminders-100.png'}" alt="" class="btn-icon" style="filter: none; width: 16px; height: 16px; margin-right: 6px; display: inline-block; vertical-align: middle;" />
+      ${isCancelled ? 'Reativar assinatura' : 'Cancelar assinatura'}
+    </button>
+  `;
+
   return `
+    ${cancelBanner}
     <div class="panel-actions">
       <button class="ghost-button calendar-button" type="button" data-add-calendar>
         <img src="Google_Calendar_icon_(2020).svg.png" alt="Google Agenda" class="calendar-logo" />
@@ -1262,6 +1395,7 @@ function renderUpcomingPayments(
       <button class="ghost-button" type="button" data-test-notification>
         Testar notificação
       </button>
+      ${toggleCancelButtonHtml}
     </div>
     <ul class="payment-list${animate ? ' is-entering' : ''}">
       ${payments
@@ -1472,7 +1606,9 @@ function getStatusClass(status) {
       ? ' status-pago'
       : status === 'futuro'
         ? ' status-futuro'
-        : '';
+        : status === 'cancelada'
+          ? ' status-cancelada'
+          : '';
 }
 
 function renderStatusPill(status) {
@@ -1480,6 +1616,9 @@ function renderStatusPill(status) {
 }
 
 function getMonthlyRowStatus(serviceKey, date) {
+  if (state.currentPersonKey && isSubscriptionCancelled(state.currentPersonKey, serviceKey, date)) {
+    return 'cancelada';
+  }
   const currentPersonPaid = state.currentPersonKey
     ? isPaymentPaid(state.currentPersonKey, { serviceKey, date })
     : false;
@@ -1495,6 +1634,9 @@ function getRotationRowStatus(serviceKey, date) {
 }
 
 function renderPaymentCellContent(serviceKey, personKey, date) {
+  if (isSubscriptionCancelled(personKey, serviceKey, date)) {
+    return '<div class="status-actions"><span class="status-pill status-cancelada">cancelada</span></div>';
+  }
   const service = SERVICES[serviceKey];
   const paid = isPaymentPaid(personKey, { serviceKey, date });
 
@@ -1704,7 +1846,7 @@ function getUpcomingPaymentsForPerson(serviceKey, personKey, limit) {
       continue;
     }
 
-    if (personPaysInMonth(serviceKey, personKey, monthIndex)) {
+    if (personPaysInMonth(serviceKey, personKey, monthIndex) && !isSubscriptionCancelled(personKey, serviceKey, date)) {
       payments.push({
         serviceKey,
         date,
@@ -1974,8 +2116,12 @@ function updatePaymentSurfaces(personKey, payment) {
   updateMonthlyTotal(state.currentPersonKey);
 
   if (personKey === state.currentPersonKey) {
-    if (!patchSubscriptionCard(payment.serviceKey, state.currentPersonKey)) {
-      patchSubscriptionCardsForPerson(state.currentPersonKey);
+    if (state.viewMode === 'summary') {
+      renderSubscriptionCards(state.currentPersonKey);
+    } else {
+      if (!patchSubscriptionCard(payment.serviceKey, state.currentPersonKey)) {
+        patchSubscriptionCardsForPerson(state.currentPersonKey);
+      }
     }
   }
 
@@ -2435,6 +2581,121 @@ function getPaymentNotificationKey(payment) {
   return `${payment.serviceKey}:${formatDateKey(payment.date)}`;
 }
 
+function getMonthYearString(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function getNextMonthYearString(date) {
+  let y = date.getFullYear();
+  let m = date.getMonth() + 1; // 1-based month index
+  m += 1;
+  if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+function getSubscriptionCancellationMonth(personKey, serviceKey) {
+  if (!paidLogsCache[personKey]) return null;
+  const prefix = `${serviceKey}:cancel_`;
+  const cancelKeys = Object.keys(paidLogsCache[personKey]).filter(k => k.startsWith(prefix));
+  if (cancelKeys.length === 0) return null;
+  const key = cancelKeys[0];
+  const parts = key.split('_');
+  return parts[parts.length - 1]; // "YYYY-MM"
+}
+
+function isSubscriptionCancelled(personKey, serviceKey, date = getToday()) {
+  const cancelMonth = getSubscriptionCancellationMonth(personKey, serviceKey);
+  if (!cancelMonth) return false;
+  const checkMonth = getMonthYearString(date);
+  return checkMonth >= cancelMonth;
+}
+
+async function cancelSubscription(personKey, serviceKey) {
+  const nextMonth = getNextMonthYearString(getToday());
+  const paymentKey = `${serviceKey}:cancel_${nextMonth}`;
+  
+  paidLogsCache[personKey] = paidLogsCache[personKey] ?? {};
+  paidLogsCache[personKey][paymentKey] = 'true';
+  savePaidLogs(paidLogsCache);
+  
+  if (!state.groupId) return;
+  
+  try {
+    setNotificationStatus('Salvando cancelamento no banco...');
+    await fetch(API_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify({
+        action: 'salvar_log',
+        id_grupo: state.groupId,
+        chave_perfil: personKey,
+        chave_servico: serviceKey,
+        mes: `cancel_${nextMonth}`,
+        pago: true,
+      }),
+    });
+    setNotificationStatus('Cancelamento salvo e sincronizado.');
+  } catch (error) {
+    setNotificationStatus('Erro de conexão ao salvar. Salvo localmente.', true);
+  }
+}
+
+async function uncancelSubscription(personKey, serviceKey) {
+  const cancelMonth = getSubscriptionCancellationMonth(personKey, serviceKey);
+  if (!cancelMonth) return;
+  
+  const paymentKey = `${serviceKey}:cancel_${cancelMonth}`;
+  if (paidLogsCache[personKey]) {
+    delete paidLogsCache[personKey][paymentKey];
+    if (Object.keys(paidLogsCache[personKey]).length === 0) {
+      delete paidLogsCache[personKey];
+    }
+  }
+  savePaidLogs(paidLogsCache);
+  
+  if (!state.groupId) return;
+  
+  try {
+    setNotificationStatus('Reativando no banco de dados...');
+    await fetch(API_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify({
+        action: 'salvar_log',
+        id_grupo: state.groupId,
+        chave_perfil: personKey,
+        chave_servico: serviceKey,
+        mes: `cancel_${cancelMonth}`,
+        pago: false,
+      }),
+    });
+    setNotificationStatus('Assinatura reativada e sincronizada.');
+  } catch (error) {
+    setNotificationStatus('Erro de conexão ao reativar. Salvo localmente.', true);
+  }
+}
+
+function formatMonthYearKeyLabel(monthYearStr) {
+  if (!monthYearStr) return '';
+  const parts = monthYearStr.split('-');
+  const year = parts[0];
+  const mIndex = parseInt(parts[1], 10) - 1;
+  return `${capitalize(MONTHS[mIndex])} de ${year}`;
+}
+
 function getNotificationLogs() {
   const localLogs = readJson(STORAGE_KEYS.notifications, {});
   return localLogs;
@@ -2644,7 +2905,8 @@ function updateUIAfterSync({
   previousStructureSnapshot = null,
   previousPaidLogs = null,
 } = {}) {
-  loadAdminSettings();
+  syncRelationships();
+  applyDynamicAmounts();
 
   if (state.currentPersonKey) {
     const structureChanged =
@@ -3640,7 +3902,7 @@ function getInvoiceSummary(personKey) {
   const pendingItems = [];
   let total = 0;
 
-  person.subscriptions.forEach((serviceKey) => {
+  getSortedServiceKeysForPerson(personKey).forEach((serviceKey) => {
     const payments = getUpcomingPaymentsForPerson(serviceKey, personKey, 12);
     payments.forEach((payment) => {
       const isPaid = isPaymentPaid(personKey, payment);
@@ -4134,10 +4396,33 @@ async function carregarDadosDoGrupo(idGrupo) {
   if (adminProfilesList) adminProfilesList.innerHTML = '';
   if (adminServicesList) adminServicesList.innerHTML = '';
 
+  const profilePanel = document.querySelector('#profileScreen .profile-panel');
+  if (profilePanel) profilePanel.classList.add('is-loading');
+
   if (profileGrid) {
-    profileGrid.innerHTML =
-      '<div style="grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 0; width: 100%;"><div class="loader-spinner"></div><p style="color: var(--muted); font-size: 0.9rem; margin: 0;">Carregando perfis...</p></div>';
+    profileGrid.innerHTML = `
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+      <div class="skeleton-profile-item">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-name"></div>
+      </div>
+    `;
   }
+
+  const submitButton = profileForm?.querySelector('button[type="submit"]');
+  if (profileNameInput) profileNameInput.disabled = true;
+  if (submitButton) submitButton.disabled = true;
 
   try {
     const url = `${API_URL}?action=carregar_dados&id_grupo=${idGrupo}`;
@@ -4154,6 +4439,12 @@ async function carregarDadosDoGrupo(idGrupo) {
   } catch (e) {
     profileMessage.style.color = 'var(--danger)';
     profileMessage.textContent = 'Erro ao sincronizar. Verifique a internet.';
+  } finally {
+    const profilePanel = document.querySelector('#profileScreen .profile-panel');
+    if (profilePanel) profilePanel.classList.remove('is-loading');
+    const submitButton = profileForm?.querySelector('button[type="submit"]');
+    if (profileNameInput) profileNameInput.disabled = false;
+    if (submitButton) submitButton.disabled = false;
   }
 }
 

@@ -7,7 +7,7 @@ const SETTINGS = {
   reminderDaysBefore: 3,
   refreshMinutes: 30,
   maxRotationStartMonth: 5,
-  maxRotation: ['sarha', 'andre', 'isabela', 'ianka'],
+  maxRotation: ['andre_luiz', 'bela_lustosa', 'ianka_lacerda', 'sarha_pedrosa'],
 };
 
 const SERVICES = {
@@ -18,11 +18,11 @@ const SERVICES = {
     model: 'rotation',
     modelLabel: 'Rodízio',
     totalAmount: 22.45,
-    participants: ['andre', 'isabela', 'ianka', 'sarha'],
+    participants: ['andre_luiz', 'bela_lustosa', 'ianka_lacerda', 'sarha_pedrosa'],
     amount: 22.45,
   },
   disney: {
-    participants: ['andre']
+    participants: ['andre_luiz']
   }
 };
 
@@ -105,6 +105,6 @@ function getUpcomingPaymentsForPerson(serviceKey, personKey, limit) {
   return payments;
 }
 
-console.log("andre max", getUpcomingPaymentsForPerson('max', 'andre', 6));
-console.log("isabela max", getUpcomingPaymentsForPerson('max', 'isabela', 6));
-console.log("andre disney", getUpcomingPaymentsForPerson('disney', 'andre', 6));
+console.log("andre max", getUpcomingPaymentsForPerson('max', 'andre_luiz', 6));
+console.log("isabela max", getUpcomingPaymentsForPerson('max', 'bela_lustosa', 6));
+console.log("andre disney", getUpcomingPaymentsForPerson('disney', 'andre_luiz', 6));
